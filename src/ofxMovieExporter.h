@@ -76,7 +76,7 @@ namespace itg
 		// codecId = CODEC_ID_MPEG4, container = "mp4"
 		// codecId = CODEC_ID_MPEG2VIDEO, container = "mov"
 		void setup(int outW = OUT_W, int outH = OUT_H, int bitRate = BIT_RATE, int frameRate = FRAME_RATE, CodecID codecId = CODEC_ID, string container = CONTAINER);
-		void record(string filePrefix=FILENAME_PREFIX, string folderPath="");
+		void record(string filePrefix=FILENAME_PREFIX, string folderPath="", bool bManuallyAddFrames=false);
 		void stop();
 		bool isRecording() const;
 
@@ -94,11 +94,14 @@ namespace itg
 		
 		// set an external pixel source, assumes 3 Byte RGB
 		// also sets the recording size but does not crop to the recording area
-		void setPixelSource(unsigned char* pixels, int w, int h);
+		void setPixelSource( const unsigned char* pixels, int w, int h);
 		
 		// reset the pixel source and record from the screen
 		// also resets the recording size to the viewport width
 		void resetPixelSource();
+		
+		// add the given frame. it's up to you to call this often enough that the framerate is correct.
+		void addFrame( const unsigned char*pixels, int w, int h );
 		
 		// get the number files that have been captured so far
 		int getNumCaptures();
@@ -159,7 +162,9 @@ namespace itg
 		int outW, outH;
 		
 		bool usePixelSource;
-		unsigned char* pixelSource;
+		const unsigned char* pixelSource;
+		
+		bool manuallyAddFrames;
 	};
 
 	inline bool ofxMovieExporter::isRecording() const { return recording; }

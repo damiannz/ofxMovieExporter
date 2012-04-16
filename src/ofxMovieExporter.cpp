@@ -105,9 +105,10 @@ namespace itg
 		clearMemory();
 	}
 
-	void ofxMovieExporter::record(string filePrefix, string folderPath)
+	void ofxMovieExporter::record(string filePrefix, string folderPath, bool bManuallyAddFrames )
 	{
 		initEncoder();
+		manuallyAddFrames = bManuallyAddFrames;
 
 		ostringstream oss;
 		oss << folderPath;
@@ -120,7 +121,8 @@ namespace itg
 		if (url_fopen(&formatCtx->pb, ofToDataPath(outFileName).c_str(), URL_WRONLY) < 0)
 			ofLog(OF_LOG_ERROR, "ofxMovieExporter: Could not open file %s", ofToDataPath(outFileName).c_str());
 
-		ofAddListener(ofEvents.draw, this, &ofxMovieExporter::checkFrame);
+		if ( !manuallyAddFrames )
+			ofAddListener(ofEvents().draw, this, &ofxMovieExporter::checkFrame);
 
 		// write the stream header, if any
 		av_write_header(formatCtx);
@@ -135,7 +137,8 @@ namespace itg
 
 	void ofxMovieExporter::stop()
 	{
-		ofRemoveListener(ofEvents.draw, this, &ofxMovieExporter::checkFrame);
+		if ( !manuallyAddFrames )
+			ofRemoveListener(ofEvents().draw, this, &ofxMovieExporter::checkFrame);
 		recording = false;
 		numCaptures++;
 #ifndef _THREAD_CAPTURE
@@ -172,7 +175,7 @@ namespace itg
 		return ofRectangle(posX, posY, inW, inH);
 	}
 
-	void ofxMovieExporter::setPixelSource(unsigned char* pixels, int w, int h)
+	void ofxMovieExporter::setPixelSource( const unsigned char* pixels, int w, int h)
 	{
 		if (isRecording())
 			stop();
@@ -233,6 +236,7 @@ namespace itg
 #ifdef _THREAD_CAPTURE
 	void ofxMovieExporter::threadedFunction()
 	{
+		int encodedFrameCount = 0;
 		while (isThreadRunning())
 		{
 			if (!frameQueue.empty())
@@ -243,7 +247,10 @@ namespace itg
 				frameQueue.pop_front();
 				frameQueueMutex.unlock();
 
+				
 				encodeFrame();
+				encodedFrameCount++;
+				printf("encoded %i frames\n", encodedFrameCount );
 
 				frameMemMutex.lock();
 				frameMem.push_back(inPixels);
@@ -258,6 +265,42 @@ namespace itg
 		}
 	}
 #endif
+	
+	void ofxMovieExporter::addFrame( const unsigned char*pixelSource, int w, int h )
+	{
+#ifdef _THREAD_CAPTURE
+		unsigned char* pixels;
+		if (!frameMem.empty())
+		{
+			frameMemMutex.lock();
+			pixels = frameMem.back();
+			frameMem.pop_back();
+			frameMemMutex.unlock();
+		}
+		else
+		{
+			pixels = new unsigned char[w * h * 3];
+		}
+
+		memcpy(pixels, pixelSource, w * h * 3);
+		
+		frameQueueMutex.lock();
+		frameQueue.push_back(pixels);
+		frameQueueMutex.unlock();
+
+#else
+		if ( w!=inW || h!=inH )
+			ofLogError("ofxMovieExporter", "addFrame: width and height don't match: got "+ofToString(w)+"x"+ofToString(h)+", expected "+ofToString(inW)+"x"+ofToString(inH) );
+		else
+		{
+			memcpy(inPixels, pixelSource, w * h * 3);
+			encodeFrame();
+		}
+#endif
+		
+
+	}
+
 
 	void ofxMovieExporter::checkFrame(ofEventArgs& args)
 	{
@@ -343,6 +386,9 @@ namespace itg
 			pkt.data = encodedBuf;
 			pkt.size = outSize;
 			av_write_frame(formatCtx, &pkt);
+		}
+		else {
+			ofLogError("ofxMovieExporter","encodeFrame: avcodec_encode_video returned packet size "+ofToString(outSize) );
 		}
 		frameNum++;
 	}
